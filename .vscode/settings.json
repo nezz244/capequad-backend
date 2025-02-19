@@ -1,0 +1,12 @@
+{
+    "files.exclude": {
+        "**/.git": false
+    },
+    "files.watcherExclude": {
+        "**/.git/objects/**": false,
+        "**/node_modules/*/**": false
+    },
+    "search.exclude": {
+        "**/node_modules": false
+    }
+}

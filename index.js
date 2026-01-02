@@ -12,6 +12,7 @@ const app = express();
 // -------------------- CORS Setup --------------------
 const allowedOrigins = [
     'https://capequad-bookings-production.up.railway.app',
+    'https://cape-quad-new112.wn.r.appspot.com',
     'http://localhost:4200' // for local dev
 ];
 

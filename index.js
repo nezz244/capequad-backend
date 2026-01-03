@@ -89,7 +89,7 @@ app.post('/send/email', async (req, res) => {
     try {
         // Prepare HTML bodies
         const customerHtml = renderTemplate(customerTemplate, {
-            name,
+            fullName,
             phoneNumber,
             totalTickets,
             date,
@@ -97,7 +97,7 @@ app.post('/send/email', async (req, res) => {
         });
 
         const adminHtml = renderTemplate(adminTemplate, {
-            name,
+            fullName,
             phoneNumber,
             totalTickets,
             date,

@@ -1,11 +1,11 @@
+require('dotenv').config(); // <--- MUST be first
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch'); // Make sure node-fetch is installed
+const fetch = require('node-fetch');
 const path = require('path');
+const db = require('./db');
 
-// Your Firestore / config imports
-const User = require('./config');
-const Booking = require('./config');
+
 
 const app = express();
 
@@ -13,15 +13,14 @@ const app = express();
 const allowedOrigins = [
     'https://capequad-bookings-production.up.railway.app',
     'https://cape-quad-new112.wn.r.appspot.com',
-    'http://localhost:4200' // for local dev
+    'http://localhost:4200'
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        if (!origin) return callback(null, true); // allow non-browser requests
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
+        if (!origin) return callback(null, true);
+        if (!allowedOrigins.includes(origin)) {
+            return callback(new Error('CORS blocked'), false);
         }
         return callback(null, true);
     },
@@ -29,59 +28,48 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Enable preflight requests
 app.options('*', cors());
-
-// -------------------- Middleware --------------------
 app.use(express.json());
 
-// -------------------- Routes --------------------
-
-// Serve index.html
+// -------------------- Static --------------------
 app.get('', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
-
-// Create user
-app.post("/user/create", async (req, res) => {
-    try {
-        const data = req.body;
-        await User.add(data);
-        res.send({ message: 'User created successfully' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send({ error: 'Failed to create user' });
-    }
+app.get("/test", (req, res) => {
+    res.send("Server is alive!");
 });
+
 
 // -------------------- Checkout with Yoco --------------------
 app.post("/create/checkout", async (req, res) => {
     try {
-        const data = req.body;
+        const { totalCost } = req.body;
 
         const apiUrl = 'https://payments.yoco.com/api/checkouts';
-        const secretKey = 'sk_test_1721ad63zabA7rJ1acd4262a7bff'; // Use environment variable in production
 
         const requestData = {
-            amount: data.totalCost,
+            amount: totalCost,
             currency: 'ZAR',
             successUrl: 'https://capequad-bookings-production.up.railway.app/success',
             failureUrl: 'https://capequad-bookings-production.up.railway.app/failure'
         };
 
-        const options = {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${secretKey}`
+                Authorization: `Bearer ${process.env.YOCO_SECRET_KEY}`
             },
             body: JSON.stringify(requestData)
-        };
+        });
 
-        const response = await fetch(apiUrl, options);
         const json = await response.json();
 
-        console.log('Yoco response:', json);
+        if (!response.ok) {
+            console.error('Yoco error:', json);
+            return res.status(400).send({ error: 'Payment failed', details: json });
+        }
+
         res.send({ data: json });
 
     } catch (err) {
@@ -90,36 +78,38 @@ app.post("/create/checkout", async (req, res) => {
     }
 });
 
-// -------------------- Send email --------------------
-app.post("/send/email", async (req, res) => {
+// -------------------- Create User --------------------
+app.post("/user/create", async (req, res) => {
     try {
-        const body = req.body;
-        const postmark = require("postmark");
+        const { fullName, email, phoneNumber } = req.body;
 
-        const client = new postmark.ServerClient("7c101cb8-3b66-4763-bb09-43b642c9b254");
+        await db.execute(
+            "INSERT INTO users (full_name, email, phone) VALUES (?, ?, ?)",
+            [fullName, email, phoneNumber]
+        );
 
-        await client.sendEmail({
-            From: "info@capequad.com",
-            To: "tnesara55@gmail.com",
-            Subject: "New booking from Cape Quad",
-            HtmlBody: `<strong>Hello</strong> Admin.<br><br> You have a new booking from <strong> ${body.fullName} </strong>. <br><br> <strong> Date and Time </strong> : ${body.date}<br> <strong>Email address </strong> : ${body.email}  <br> <strong>Phone number</strong> :  ${body.phoneNumber} <br> <strong>Service</strong>: ${body.service} <br>  <strong>Total tickets </strong>: ${body.totalTickets} <br>  <strong>Total Paid</strong>: ${body.totalCost} <br>  <strong>Transport Included</strong>: ${body.transport} <br>  <strong>Payment ref </strong>: ${body.paymentRef} <br><br> <strong>Cheers</strong> and happy touring 😄`,
-            TextBody: "Hello from Cape Quad!",
-            MessageStream: "outbound"
-        });
-
-        res.send({ message: 'Email sent successfully' });
-
+        res.send({ message: 'User created successfully' });
     } catch (err) {
         console.error(err);
-        res.status(500).send({ error: 'Failed to send email' });
+        res.status(500).send({ error: 'Failed to create user' });
     }
 });
 
-// -------------------- Bookings --------------------
+// -------------------- Create Booking --------------------
 app.post("/bookings/create", async (req, res) => {
     try {
-        const data = req.body;
-        await Booking.add(data);
+        const b = req.body;
+
+        await db.execute(`
+            INSERT INTO bookings
+            (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            b.fullName, b.email, b.phoneNumber, b.service,
+            b.totalTickets, b.totalCost, b.transport,
+            b.paymentRef, b.date
+        ]);
+
         res.send({ message: 'Booking created successfully' });
     } catch (err) {
         console.error(err);
@@ -127,36 +117,38 @@ app.post("/bookings/create", async (req, res) => {
     }
 });
 
-// Retrieve users
+// -------------------- Retrieve Users --------------------
 app.get('/retrieve/users', async (req, res) => {
     try {
-        const snapshot = await User.get();
-        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        res.send(list);
+        const [rows] = await db.execute("SELECT * FROM users ORDER BY id DESC");
+        res.send(rows);
     } catch (err) {
         console.error(err);
         res.status(500).send({ error: 'Failed to retrieve users' });
     }
 });
 
-// Retrieve bookings
+// -------------------- Retrieve Bookings --------------------
 app.get('/retrieve/bookings', async (req, res) => {
     try {
-        const snapshot = await Booking.get();
-        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        res.send(list);
+        const [rows] = await db.execute("SELECT * FROM bookings ORDER BY id DESC");
+        res.send(rows);
     } catch (err) {
         console.error(err);
         res.status(500).send({ error: 'Failed to retrieve bookings' });
     }
 });
 
-// Update user
+// -------------------- Update User --------------------
 app.post("/update/user", async (req, res) => {
     try {
-        const id = req.body.id;
-        delete req.body.id;
-        await User.doc(id).update(req.body);
+        const { id, fullName, email, phoneNumber } = req.body;
+
+        await db.execute(
+            "UPDATE users SET full_name=?, email=?, phone=? WHERE id=?",
+            [fullName, email, phoneNumber, id]
+        );
+
         res.send({ msg: "User updated" });
     } catch (err) {
         console.error(err);
@@ -164,12 +156,22 @@ app.post("/update/user", async (req, res) => {
     }
 });
 
-// Update booking
+// -------------------- Update Booking --------------------
 app.post("/update/booking", async (req, res) => {
     try {
-        const id = req.body.id;
-        delete req.body.id;
-        await Booking.doc(id).update(req.body);
+        const b = req.body;
+
+        await db.execute(`
+            UPDATE bookings SET
+            full_name=?, email=?, phone=?, service=?, total_tickets=?, 
+            total_cost=?, transport=?, payment_ref=?, booking_date=?
+            WHERE id=?
+        `, [
+            b.fullName, b.email, b.phoneNumber, b.service,
+            b.totalTickets, b.totalCost, b.transport,
+            b.paymentRef, b.date, b.id
+        ]);
+
         res.send({ msg: "Booking updated" });
     } catch (err) {
         console.error(err);
@@ -177,11 +179,10 @@ app.post("/update/booking", async (req, res) => {
     }
 });
 
-// Delete user
+// -------------------- Delete User --------------------
 app.post("/delete/user", async (req, res) => {
     try {
-        const id = req.body.id;
-        await User.doc(id).delete();
+        await db.execute("DELETE FROM users WHERE id=?", [req.body.id]);
         res.send({ msg: "User deleted" });
     } catch (err) {
         console.error(err);
@@ -189,11 +190,10 @@ app.post("/delete/user", async (req, res) => {
     }
 });
 
-// Delete booking
+// -------------------- Delete Booking --------------------
 app.post("/delete/booking", async (req, res) => {
     try {
-        const id = req.body.id;
-        await Booking.doc(id).delete();
+        await db.execute("DELETE FROM bookings WHERE id=?", [req.body.id]);
         res.send({ msg: "Booking deleted" });
     } catch (err) {
         console.error(err);
@@ -201,8 +201,6 @@ app.post("/delete/booking", async (req, res) => {
     }
 });
 
-// -------------------- Start Server --------------------
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
-});
+// -------------------- Start --------------------
+const PORT = process.env.PORT || 3307;
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));

@@ -100,20 +100,34 @@ app.post("/bookings/create", async (req, res) => {
     try {
         const b = req.body;
 
-        await db.execute(`
-            INSERT INTO bookings
-            (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            b.fullName, b.email, b.phoneNumber, b.service,
-            b.totalTickets, b.totalCost, b.transport,
-            b.paymentRef, b.date
-        ]);
+        // Using db.query instead of db.execute
+        const [result] = await db.query(
+            `
+      INSERT INTO bookings
+      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+            [
+                b.fullName,
+                b.email,
+                b.phoneNumber,
+                b.service,
+                b.totalTickets,
+                b.totalCost,
+                b.transport,
+                b.paymentRef,
+                b.date
+            ]
+        );
 
-        res.send({ message: 'Booking created successfully' });
+        // result.insertId gives the ID of the new booking
+        res.json({
+            message: "Booking created successfully",
+            bookingId: result.insertId
+        });
     } catch (err) {
-        console.error(err);
-        res.status(500).send({ error: 'Failed to create booking' });
+        console.error("Booking creation error:", err);
+        res.status(500).json({ error: "Failed to create booking" });
     }
 });
 

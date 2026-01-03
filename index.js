@@ -206,8 +206,7 @@ app.post("/bookings/create", async (req, res) => {
     // 1️⃣ Validate required fields
     const required = [
         "fullName", "email", "phoneNumber",
-        "service", "totalTickets", "totalCost",
-        "transport", "paymentRef", "date"
+        "service", "totalTickets", "totalCost", "paymentRef", "date"
     ];
     const missing = required.filter(f => !b[f]);
     if (missing.length) {

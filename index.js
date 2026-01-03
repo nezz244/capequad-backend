@@ -76,6 +76,7 @@ function renderTemplate(template, data) {
 
 // POST /send/email
 app.post('/send/email', async (req, res) => {
+    console.log("Body received email:", req.body);
     const {
         email,
         fullName,

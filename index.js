@@ -106,7 +106,7 @@ app.post('/send/email', async (req, res) => {
 
         // Send email to customer
         const customerResponse = await client.sendEmail({
-            From: 'verified-sender@example.com',
+            From: 'info@capequad.com',
             To: customer_email,
             Subject: 'Booking Confirmation ✅',
             HtmlBody: customerHtml
@@ -114,8 +114,8 @@ app.post('/send/email', async (req, res) => {
 
         // Send email to admin
         const adminResponse = await client.sendEmail({
-            From: 'verified-sender@example.com',
-            To: 'tnesara55@gmail.com',
+            From: 'info@capequad.com',
+            To: 'info@capequad.com',
             Subject: 'New Booking Alert 📝',
             HtmlBody: adminHtml
         });

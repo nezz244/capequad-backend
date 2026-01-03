@@ -147,14 +147,18 @@ app.post("/create/checkout", async (req, res) => {
     try {
         const { totalCost } = req.body;
 
+        const amountInCents = Math.round(Number(totalCost) * 100);
+
         const apiUrl = 'https://payments.yoco.com/api/checkouts';
 
         const requestData = {
-            amount: totalCost,
+            amount: amountInCents,
             currency: 'ZAR',
             successUrl: 'https://capequad-bookings-production.up.railway.app/success',
             failureUrl: 'https://capequad-bookings-production.up.railway.app/failure'
         };
+
+        console.log("Checkout:", { totalCost, amountInCents });
 
         const response = await fetch(apiUrl, {
             method: 'POST',

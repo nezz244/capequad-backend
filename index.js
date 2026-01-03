@@ -65,6 +65,9 @@ const adminTemplate = `
 <p>People count: {{totalTickets}}</p>
 <p>Booking date: {{date}}</p>
 <p>Customer email: {{email}}</p>
+<p>Transport: {{transport}}</p>
+<p>Amount Paid: {{totalCost}}</p>
+<p>Activity: {{service}}</p>
 `;
 
 function renderTemplate(template, data) {
@@ -78,11 +81,14 @@ app.post('/send/email', async (req, res) => {
         fullName,
         phoneNumber,
         totalTickets,
-        date
+        date,
+        totalCost,
+        transport,
+        service
 
     } = req.body;
 
-    if (!email || !fullName || !phoneNumber || !totalTickets || !date) {
+    if (!email || !fullName || !phoneNumber || !totalTickets || !date || !totalCost || !transport || !service) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -101,7 +107,10 @@ app.post('/send/email', async (req, res) => {
             phoneNumber,
             totalTickets,
             date,
-            email
+            email,
+            totalCost,
+            transport,
+            service
         });
 
         // Send email to customer

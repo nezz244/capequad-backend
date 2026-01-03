@@ -99,6 +99,7 @@ app.post("/user/create", async (req, res) => {
 app.post("/bookings/create", async (req, res) => {
     try {
         const b = req.body;
+        console.log("Body received:", req.body);
 
         // 1️⃣ Validate required fields
         const requiredFields = [

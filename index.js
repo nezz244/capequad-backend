@@ -51,20 +51,20 @@ const client = new postmark.ServerClient(process.env.POSTMARK_API_KEY);
 const customerTemplate = `
 <h1>Payment Success</h1>
 <p>Booking created successfully!</p>
-<p>Hi {{name}}, your booking for {{people_count}} person(s) on {{booking_date}} ({{booking_iso_date}}) has been created successfully with CapeQuad.</p>
-<p>We have your contact number as: {{phone}}</p>
-<p>An email with your booking details has been sent to {{customer_email}}. Your tour guide will contact you within an hour from the booking time. Happy touring!! 💪</p>
+<p>Hi {{fullName}}, your booking for {{totalTickets}} person(s) on {{date}} has been created successfully with CapeQuad.</p>
+<p>We have your contact number as: {{phoneNumber}}</p>
+<p>Your tour guide will contact you within an hour from the booking time. Happy touring!! 💪</p>
 `;
 
 // Admin email template
 const adminTemplate = `
 <h1>New Booking Alert</h1>
 <p>A new booking has been created.</p>
-<p>Customer: {{name}}</p>
-<p>Phone: {{phone}}</p>
-<p>People count: {{people_count}}</p>
-<p>Booking date: {{booking_date}}</p>
-<p>Customer email: {{customer_email}}</p>
+<p>Customer: {{fullName}}</p>
+<p>Phone: {{phoneNumber}}</p>
+<p>People count: {{totalTickets}}</p>
+<p>Booking date: {{date}}</p>
+<p>Customer email: {{email}}</p>
 `;
 
 function renderTemplate(template, data) {

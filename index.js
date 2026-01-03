@@ -4,7 +4,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const path = require('path');
 const db = require('./db');
-
+const nodemailer = require('nodemailer');
 
 
 const app = express();
@@ -37,6 +37,76 @@ app.get('', (req, res) => {
 });
 app.get("/test", (req, res) => {
     res.send("Server is alive!");
+});
+
+
+// 1️⃣ Configure transporter (example with Gmail SMTP)
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER, // e.g., your Gmail address
+        pass: process.env.EMAIL_PASS  // e.g., app password if using Gmail
+    }
+});
+
+// 2️⃣ Send booking emails endpoint
+app.post("/send/email", async (req, res) => {
+    const { fullName, email, phoneNumber, service, totalTickets, date, totalCost, transport, paymentRef } = req.body;
+
+    // Validate required fields
+    if (!fullName || !email || !phoneNumber || !service || !totalTickets || !date) {
+        return res.status(400).json({ error: "Missing required booking details" });
+    }
+
+    // Convert date to readable format
+    const bookingDate = new Date(date);
+    const formattedDate = bookingDate.toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric'
+    });
+
+    try {
+        // 3️⃣ Email to Admin
+        const adminMailOptions = {
+            from: `"CapeQuad" <${process.env.EMAIL_USER}>`,
+            to: 'tnesara55@gmail.com',
+            subject: `New Booking: ${fullName} - ${service}`,
+            html: `
+        <h3>New Booking Received</h3>
+        <p><strong>Name:</strong> ${fullName}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Phone:</strong> ${phoneNumber}</p>
+        <p><strong>Service:</strong> ${service}</p>
+        <p><strong>Tickets:</strong> ${totalTickets}</p>
+        <p><strong>Transport:</strong> ${transport || 'N/A'}</p>
+        <p><strong>Date:</strong> ${formattedDate}</p>
+        <p><strong>Total Cost:</strong> ${totalCost}</p>
+        <p><strong>Payment Ref:</strong> ${paymentRef}</p>
+      `
+        };
+
+        await transporter.sendMail(adminMailOptions);
+
+        // 4️⃣ Email to Client
+        const clientMailOptions = {
+            from: `"CapeQuad" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: `Booking Confirmation - ${service}`,
+            html: `
+        <p>Booking created successfully!</p>
+        <p>Hi <strong>${fullName}</strong>,</p>
+        <p>Your booking for <strong>${totalTickets} person(s)</strong> on <strong>${formattedDate}</strong> has been created successfully with Cape Quad.</p>
+        <p>An email with booking details has been sent to <strong>info@capequad.com</strong>. Your tour guide will contact you within an hour from booking time. Happy touring! 💪</p>
+      `
+        };
+
+        await transporter.sendMail(clientMailOptions);
+
+        res.json({ message: "Emails sent successfully to admin and client" });
+
+    } catch (err) {
+        console.error("Email sending error:", err);
+        res.status(500).json({ error: "Failed to send emails", details: err.message });
+    }
 });
 
 

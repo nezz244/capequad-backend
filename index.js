@@ -100,13 +100,43 @@ app.post("/bookings/create", async (req, res) => {
     try {
         const b = req.body;
 
-        // Using db.query instead of db.execute
+        // 1️⃣ Validate required fields
+        const requiredFields = [
+            "fullName",
+            "email",
+            "phoneNumber",
+            "service",
+            "totalTickets",
+            "totalCost",
+            "transport",
+            "paymentRef",
+            "date"
+        ];
+
+        const missingFields = requiredFields.filter(field => !b[field]);
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                error: "Missing required fields",
+                missingFields
+            });
+        }
+
+        // 2️⃣ Ensure date is in proper format (YYYY-MM-DD)
+        const bookingDate = new Date(b.date);
+        if (isNaN(bookingDate.getTime())) {
+            return res.status(400).json({
+                error: "Invalid date format. Use YYYY-MM-DD."
+            });
+        }
+        const formattedDate = bookingDate.toISOString().split("T")[0]; // YYYY-MM-DD
+
+        // 3️⃣ Insert into database
         const [result] = await db.query(
             `
-      INSERT INTO bookings
-      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
+            INSERT INTO bookings
+            (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
             [
                 b.fullName,
                 b.email,
@@ -116,18 +146,27 @@ app.post("/bookings/create", async (req, res) => {
                 b.totalCost,
                 b.transport,
                 b.paymentRef,
-                b.date
+                formattedDate
             ]
         );
 
-        // result.insertId gives the ID of the new booking
-        res.json({
+        // 4️⃣ Return success
+        res.status(201).json({
             message: "Booking created successfully",
             bookingId: result.insertId
         });
     } catch (err) {
-        console.error("Booking creation error:", err);
-        res.status(500).json({ error: "Failed to create booking" });
+        // 5️⃣ Detailed error logging
+        console.error("Booking creation error:", {
+            message: err.message,
+            code: err.code,
+            sqlMessage: err.sqlMessage
+        });
+
+        res.status(500).json({
+            error: "Failed to create booking",
+            details: err.message
+        });
     }
 });
 

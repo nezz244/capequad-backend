@@ -74,15 +74,15 @@ function renderTemplate(template, data) {
 // POST /send/email
 app.post('/send/email', async (req, res) => {
     const {
-        customer_email,
-        name,
-        phone,
-        people_count,
-        booking_date
+        email,
+        fullName,
+        phoneNumber,
+        totalTickets,
+        date
 
     } = req.body;
 
-    if (!customer_email || !name || !phone || !people_count || !booking_date) {
+    if (!email || !fullName || !phoneNumber || !totalTickets || !date) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -90,24 +90,24 @@ app.post('/send/email', async (req, res) => {
         // Prepare HTML bodies
         const customerHtml = renderTemplate(customerTemplate, {
             name,
-            phone,
-            people_count,
-            booking_date,
-            customer_email
+            phoneNumber,
+            totalTickets,
+            date,
+            email
         });
 
         const adminHtml = renderTemplate(adminTemplate, {
             name,
-            phone,
-            people_count,
-            booking_date,
-            customer_email
+            phoneNumber,
+            totalTickets,
+            date,
+            email
         });
 
         // Send email to customer
         const customerResponse = await client.sendEmail({
             From: 'info@capequad.com',
-            To: customer_email,
+            To: email,
             Subject: 'Booking Confirmation ✅',
             HtmlBody: customerHtml
         });

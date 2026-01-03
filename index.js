@@ -89,7 +89,7 @@ app.post('/send/email', async (req, res) => {
 
     } = req.body;
 
-    if (!email || !fullName || !phoneNumber || !totalTickets || !date || !totalCost || !transport || !service) {
+    if (!email || !fullName || !phoneNumber || !totalTickets || !date || !totalCost || !service) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 

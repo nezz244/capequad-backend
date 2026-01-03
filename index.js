@@ -75,7 +75,6 @@ function renderTemplate(template, data) {
 app.post('/send/email', async (req, res) => {
     const {
         customer_email,
-        admin_email,
         name,
         phone,
         people_count,
@@ -83,7 +82,7 @@ app.post('/send/email', async (req, res) => {
 
     } = req.body;
 
-    if (!customer_email || !name || !phone || !people_count || !booking_date || !admin_email) {
+    if (!customer_email || !name || !phone || !people_count || !booking_date) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -116,7 +115,7 @@ app.post('/send/email', async (req, res) => {
         // Send email to admin
         const adminResponse = await client.sendEmail({
             From: 'verified-sender@example.com',
-            To: admin_email,
+            To: 'tnesara55@gmail.com',
             Subject: 'New Booking Alert 📝',
             HtmlBody: adminHtml
         });

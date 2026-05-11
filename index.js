@@ -154,7 +154,21 @@ app.post("/create/checkout", async (req, res) => {
 
         const apiUrl = 'https://payments.yoco.com/api/checkouts';
 
-        const frontendBaseUrl = (process.env.FRONTEND_BASE_URL || 'https://capeadrenaline.com').replace(/\/+$/, '');
+        const requestOrigin = req.get('origin');
+        const configuredBaseUrl = process.env.FRONTEND_BASE_URL;
+        const derivedBaseUrl =
+            !configuredBaseUrl && requestOrigin && allowedOrigins.includes(requestOrigin)
+                ? requestOrigin
+                : undefined;
+        const frontendBaseUrl = (configuredBaseUrl || derivedBaseUrl || '').replace(/\/+$/, '');
+
+        if (!frontendBaseUrl) {
+            return res.status(500).send({
+                error: 'FRONTEND_BASE_URL not configured',
+                details:
+                    'Set FRONTEND_BASE_URL on the server, or call this endpoint from an allowed Origin so redirects can be derived safely.'
+            });
+        }
 
         const requestData = {
             amount: amountInCents,

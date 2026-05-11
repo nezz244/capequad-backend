@@ -14,11 +14,12 @@ const app = express();
 // -------------------- CORS Setup --------------------
 const allowedOrigins = [
     'https://capequad-bookings-production.up.railway.app',
+    'https://capeadrenaline.com',
     'https://cape-quad-new112.wn.r.appspot.com',
     'http://localhost:4200'
 ];
 
-app.use(cors({
+const corsOptions = {
     origin: function(origin, callback) {
         if (!origin) return callback(null, true);
         if (!allowedOrigins.includes(origin)) {
@@ -28,9 +29,10 @@ app.use(cors({
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
 
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // -------------------- Static --------------------

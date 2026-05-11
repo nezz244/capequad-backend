@@ -15,6 +15,7 @@ const app = express();
 const allowedOrigins = [
     'https://capequad-bookings-production.up.railway.app',
     'https://capeadrenaline.com',
+    'https://www.capeadrenaline.com',
     'https://cape-quad-new112.wn.r.appspot.com',
     'http://localhost:4200'
 ];
@@ -118,7 +119,7 @@ app.post('/send/email', async (req, res) => {
 
         // Send email to customer
         const customerResponse = await client.sendEmail({
-            From: 'info@capequad.com',
+            From: 'info@capeadrenaline.com',
             To: email,
             Subject: 'Booking Confirmation ✅',
             HtmlBody: customerHtml
@@ -126,8 +127,8 @@ app.post('/send/email', async (req, res) => {
 
         // Send email to admin
         const adminResponse = await client.sendEmail({
-            From: 'info@capequad.com',
-            To: 'info@capequad.com',
+            From: 'info@capeadrenaline.com',
+            To: 'info@capeadrenaline.com',
             Subject: 'New Booking Alert 📝',
             HtmlBody: adminHtml
         });
@@ -153,11 +154,13 @@ app.post("/create/checkout", async (req, res) => {
 
         const apiUrl = 'https://payments.yoco.com/api/checkouts';
 
+        const frontendBaseUrl = (process.env.FRONTEND_BASE_URL || 'https://capeadrenaline.com').replace(/\/+$/, '');
+
         const requestData = {
             amount: amountInCents,
             currency: 'ZAR',
-            successUrl: 'https://capequad-bookings-production.up.railway.app/success',
-            failureUrl: 'https://capequad-bookings-production.up.railway.app/failure'
+            successUrl: `${frontendBaseUrl}/success`,
+            failureUrl: `${frontendBaseUrl}/failure`
         };
 
         console.log("Checkout:", { totalCost, amountInCents });

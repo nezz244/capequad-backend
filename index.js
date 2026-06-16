@@ -316,7 +316,7 @@ async function createBookingRecord(booking) {
 }
 
 function extractYocoEventType(payload) {
-    return payload.type || payload.event || payload.eventType || payload.name || '';
+    return payload.event_type || payload.type || payload.event || payload.eventType || payload.name || '';
 }
 
 function isSuccessfulYocoPayment(payload) {
@@ -329,7 +329,8 @@ function isSuccessfulYocoPayment(payload) {
         payload.payload?.paymentStatus
     ].filter(Boolean).map(value => String(value).toLowerCase());
 
-    return eventType.includes('succeed') ||
+    return eventType === 'payment.created' ||
+        eventType.includes('succeed') ||
         eventType.includes('paid') ||
         statusCandidates.some(status => ['succeeded', 'successful', 'paid', 'complete', 'completed'].includes(status));
 }
@@ -348,15 +349,22 @@ function extractYocoReference(payload) {
         if (metadata.bookingRef) {
             return { bookingRef: metadata.bookingRef };
         }
+        if (metadata.checkoutId) {
+            return { checkoutId: metadata.checkoutId };
+        }
     }
 
     const checkoutId = payload.checkoutId ||
+        payload.order_id ||
         payload.checkout?.id ||
         payload.data?.checkoutId ||
+        payload.data?.order_id ||
         payload.data?.checkout?.id ||
         payload.data?.object?.checkoutId ||
+        payload.data?.object?.order_id ||
         payload.data?.object?.checkout?.id ||
         payload.payload?.checkoutId ||
+        payload.payload?.order_id ||
         payload.payload?.checkout?.id ||
         payload.id ||
         payload.data?.id ||
@@ -366,12 +374,16 @@ function extractYocoReference(payload) {
 }
 
 function extractYocoPaymentRef(payload, fallback) {
-    return payload.paymentId ||
+    return payload.payment_id ||
+        payload.paymentId ||
         payload.payment?.id ||
+        payload.data?.payment_id ||
         payload.data?.paymentId ||
         payload.data?.payment?.id ||
+        payload.data?.object?.payment_id ||
         payload.data?.object?.paymentId ||
         payload.data?.object?.payment?.id ||
+        payload.payload?.payment_id ||
         payload.payload?.paymentId ||
         payload.payload?.payment?.id ||
         payload.id ||
@@ -393,22 +405,33 @@ function verifyYocoWebhook(req) {
         return true;
     }
 
-    const signature = req.get('webhook-signature') ||
-        req.get('x-yoco-signature') ||
-        req.get('yoco-signature') ||
-        req.get('x-signature');
+    const webhookId = req.get('webhook-id');
+    const webhookTimestamp = req.get('webhook-timestamp');
+    const webhookSignature = req.get('webhook-signature');
 
-    if (!signature) {
+    if (!webhookId || !webhookTimestamp || !webhookSignature) {
+        return false;
+    }
+
+    const timestampSeconds = Number(webhookTimestamp);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    if (!Number.isFinite(timestampSeconds) || Math.abs(nowSeconds - timestampSeconds) > 180) {
         return false;
     }
 
     const rawBody = req.rawBody || JSON.stringify(req.body || {});
-    const digest = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-    const base64Digest = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
-    const normalizedSignature = signature.replace(/^sha256=/i, '');
+    const secretValue = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;
+    const secretBytes = Buffer.from(secretValue, 'base64');
+    const signedContent = `${webhookId}.${webhookTimestamp}.${rawBody}`;
+    const expectedSignature = crypto.createHmac('sha256', secretBytes).update(signedContent).digest('base64');
+    const signatures = webhookSignature
+        .split(' ')
+        .map(signature => signature.split(','))
+        .filter(([version, value]) => version === 'v1' && value)
+        .map(([, value]) => value);
 
-    return timingSafeEqualString(normalizedSignature, digest) ||
-        timingSafeEqualString(normalizedSignature, base64Digest);
+    return signatures.some(signature => timingSafeEqualString(signature, expectedSignature));
 }
 
 // POST /send/email

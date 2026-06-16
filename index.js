@@ -54,9 +54,9 @@ const client = new postmark.ServerClient(process.env.POSTMARK_API_KEY);
 const customerTemplate = `
 <h1>Payment Success</h1>
 <p>Booking created successfully!</p>
-<p>Hi {{fullName}}, your booking for {{totalTickets}} person(s) on {{date}} has been created successfully with CapeQuad.</p>
+<p>Hi {{fullName}}, your booking for {{totalTickets}} {{bookingUnit}} on {{date}} at {{timeSlot}} has been created successfully with CapeAdrenaline.</p>
 <p>We have your contact number as: {{phoneNumber}}</p>
-<p>Your tour guide will contact you within an hour from the booking time. Happy touring!! 💪</p>
+<p>Your tour guide will contact you within an hour from the booking time. Happy touring!</p>
 `;
 
 // Admin email template
@@ -65,44 +65,221 @@ const adminTemplate = `
 <p>A new booking has been created.</p>
 <p>Customer: {{fullName}}</p>
 <p>Phone: {{phoneNumber}}</p>
-<p>People count: {{totalTickets}}</p>
+<p>Group size: {{totalTickets}} {{bookingUnit}}</p>
 <p>Booking date: {{date}}</p>
+<p>Time slot: {{timeSlot}}</p>
 <p>Customer email: {{email}}</p>
 <p>Transport: {{transport}}</p>
 <p>Amount Paid: {{totalCost}}</p>
 <p>Activity: {{service}}</p>
 `;
 
+const groupActivityCustomerTemplate = `
+<h1>Group Activity Request Received</h1>
+<p>Hi {{fullName}}, thanks for contacting CapeAdrenaline.</p>
+<p>We received your request for {{groupActivityLabel}} and will contact you soon.</p>
+`;
+
+const groupActivityAdminTemplate = `
+<h1>New Group Activity Request</h1>
+<p>Customer: {{fullName}}</p>
+<p>Phone: {{phoneNumber}}</p>
+<p>Email: {{email}}</p>
+<p>Activity type: {{groupActivityLabel}}</p>
+<p>Message: {{message}}</p>
+`;
+
 function renderTemplate(template, data) {
     return template.replace(/{{(.*?)}}/g, (_, key) => data[key.trim()] || '');
+}
+
+function parsePositiveNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeBookingDate(value) {
+    const bookingDate = new Date(value);
+    if (isNaN(bookingDate.getTime())) {
+        return null;
+    }
+
+    return bookingDate.toISOString().split("T")[0];
+}
+
+function normalizeTimeSlot(value) {
+    if (!value) {
+        return null;
+    }
+
+    const match = String(value).match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    return match ? `${match[1]}:${match[2]}` : null;
+}
+
+async function columnExists(tableName, columnName) {
+    const [rows] = await db.execute(
+        `
+        SELECT COUNT(*) AS count
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+        `,
+        [tableName, columnName]
+    );
+
+    return Number(rows[0]?.count || 0) > 0;
+}
+
+async function ensureBookingColumns() {
+    const columns = [
+        { name: 'booking_time', definition: 'TIME NULL' },
+        { name: 'price_unit', definition: 'VARCHAR(32) NULL' },
+        { name: 'max_people_per_slot', definition: 'INT NULL' }
+    ];
+
+    for (const column of columns) {
+        if (!(await columnExists('bookings', column.name))) {
+            await db.execute(`ALTER TABLE bookings ADD COLUMN ${column.name} ${column.definition}`);
+        }
+    }
+}
+
+async function assertSlotCapacity({ service, date, timeSlot, totalTickets, maxPeoplePerSlot }) {
+    const formattedDate = normalizeBookingDate(date);
+    const normalizedTimeSlot = normalizeTimeSlot(timeSlot);
+    const requestedTickets = parsePositiveNumber(totalTickets);
+    const slotLimit = parsePositiveNumber(maxPeoplePerSlot);
+
+    if (!service) {
+        return { ok: false, status: 400, error: 'Missing service.' };
+    }
+    if (!formattedDate) {
+        return { ok: false, status: 400, error: 'Invalid date format.' };
+    }
+    if (!normalizedTimeSlot) {
+        return { ok: false, status: 400, error: 'Invalid or missing time slot.' };
+    }
+    if (!requestedTickets) {
+        return { ok: false, status: 400, error: 'Invalid totalTickets value.' };
+    }
+    if (!slotLimit) {
+        return { ok: false, status: 400, error: 'Invalid maxPeoplePerSlot value.' };
+    }
+
+    await ensureBookingColumns();
+
+    const [rows] = await db.execute(
+        `
+        SELECT COALESCE(SUM(total_tickets), 0) AS bookedTickets
+        FROM bookings
+        WHERE service = ?
+          AND booking_date = ?
+          AND booking_time = ?
+        `,
+        [service, formattedDate, `${normalizedTimeSlot}:00`]
+    );
+
+    const bookedTickets = Number(rows[0]?.bookedTickets || 0);
+    if (bookedTickets + requestedTickets > slotLimit) {
+        return {
+            ok: false,
+            status: 409,
+            error: 'Selected time slot is no longer available.',
+            details: {
+                bookedTickets,
+                requestedTickets,
+                maxPeoplePerSlot: slotLimit,
+                remaining: Math.max(slotLimit - bookedTickets, 0)
+            }
+        };
+    }
+
+    return { ok: true, formattedDate, normalizedTimeSlot, requestedTickets, slotLimit };
 }
 
 // POST /send/email
 app.post('/send/email', async (req, res) => {
     console.log("Body received email:", req.body);
+    if (req.body.inquiryType === 'group_activity') {
+        const {
+            email,
+            fullName,
+            phoneNumber,
+            groupActivityLabel,
+            message
+        } = req.body;
+
+        if (!email || !fullName || !phoneNumber || !groupActivityLabel) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        try {
+            const customerResponse = await client.sendEmail({
+                From: 'info@capeadrenaline.com',
+                To: email,
+                Subject: 'Group Activity Request Received',
+                HtmlBody: renderTemplate(groupActivityCustomerTemplate, {
+                    fullName,
+                    groupActivityLabel
+                })
+            });
+
+            const adminResponse = await client.sendEmail({
+                From: 'info@capeadrenaline.com',
+                To: 'info@capeadrenaline.com',
+                Subject: 'New Group Activity Request',
+                HtmlBody: renderTemplate(groupActivityAdminTemplate, {
+                    fullName,
+                    phoneNumber,
+                    email,
+                    groupActivityLabel,
+                    message: message || 'No message provided'
+                })
+            });
+
+            return res.json({
+                message: 'Group activity emails sent successfully',
+                customerResponse,
+                adminResponse
+            });
+        } catch (error) {
+            console.error('Group activity email sending error:', error);
+            return res.status(500).json({ error: 'Failed to send group activity emails', details: error.message });
+        }
+    }
+
     const {
         email,
         fullName,
         phoneNumber,
         totalTickets,
         date,
+        timeSlot,
         totalCost,
         transport,
-        service
+        service,
+        priceUnit
 
     } = req.body;
 
-    if (!email || !fullName || !phoneNumber || !totalTickets || !date || !totalCost || !service) {
+    if (!email || !fullName || !phoneNumber || !totalTickets || !date || !timeSlot || !totalCost || !service) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
     try {
+        const formattedDate = normalizeBookingDate(date) || date;
+        const normalizedTimeSlot = normalizeTimeSlot(timeSlot) || timeSlot;
+        const bookingUnit = priceUnit === 'couple' ? 'couple(s)' : 'person(s)';
+
         // Prepare HTML bodies
         const customerHtml = renderTemplate(customerTemplate, {
             fullName,
             phoneNumber,
             totalTickets,
-            date,
+            date: formattedDate,
+            timeSlot: normalizedTimeSlot,
+            bookingUnit,
             email
         });
 
@@ -110,7 +287,9 @@ app.post('/send/email', async (req, res) => {
             fullName,
             phoneNumber,
             totalTickets,
-            date,
+            date: formattedDate,
+            timeSlot: normalizedTimeSlot,
+            bookingUnit,
             email,
             totalCost,
             transport,
@@ -149,6 +328,14 @@ app.post('/send/email', async (req, res) => {
 app.post("/create/checkout", async (req, res) => {
     try {
         const { totalCost } = req.body;
+
+        const capacity = await assertSlotCapacity(req.body);
+        if (!capacity.ok) {
+            return res.status(capacity.status).send({
+                error: capacity.error,
+                details: capacity.details
+            });
+        }
 
         const amountInCents = Math.round(Number(totalCost) * 100);
 
@@ -229,29 +416,28 @@ app.post("/bookings/create", async (req, res) => {
     // 1️⃣ Validate required fields
     const required = [
         "fullName", "email", "phoneNumber",
-        "service", "totalTickets", "totalCost", "paymentRef", "date"
+        "service", "totalTickets", "totalCost", "paymentRef", "date", "timeSlot", "maxPeoplePerSlot"
     ];
     const missing = required.filter(f => !b[f]);
     if (missing.length) {
         return res.status(400).json({ error: "Missing required fields", fields: missing });
     }
 
-    // 2️⃣ Ensure date is in proper format (YYYY-MM-DD)
-    const bookingDate = new Date(b.date);
-    if (isNaN(bookingDate.getTime())) {
-        return res.status(400).json({
-            error: "Invalid date format. Use YYYY-MM-DD."
-        });
-    }
-    const formattedDate = bookingDate.toISOString().split("T")[0]; // YYYY-MM-DD
-
     try {
+        const capacity = await assertSlotCapacity(b);
+        if (!capacity.ok) {
+            return res.status(capacity.status).json({
+                error: capacity.error,
+                details: capacity.details
+            });
+        }
+
         // 3️⃣ Insert into database using db.query
         const [result] = await db.query(
             `
       INSERT INTO bookings
-      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date, booking_time, price_unit, max_people_per_slot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
             [
                 b.fullName,
@@ -262,7 +448,10 @@ app.post("/bookings/create", async (req, res) => {
                 b.totalCost,
                 b.transport,
                 b.paymentRef,
-                formattedDate // use formatted YYYY-MM-DD
+                capacity.formattedDate,
+                capacity.normalizedTimeSlot,
+                b.priceUnit || 'person',
+                capacity.slotLimit
             ]
         );
 
@@ -316,16 +505,29 @@ app.post("/update/user", async (req, res) => {
 app.post("/update/booking", async (req, res) => {
     try {
         const b = req.body;
+        const formattedDate = normalizeBookingDate(b.date);
+        const normalizedTimeSlot = normalizeTimeSlot(b.timeSlot);
+
+        if (!formattedDate) {
+            return res.status(400).send({ error: 'Invalid date format' });
+        }
+        if (!normalizedTimeSlot) {
+            return res.status(400).send({ error: 'Invalid or missing time slot' });
+        }
+
+        await ensureBookingColumns();
 
         await db.execute(`
             UPDATE bookings SET
             full_name=?, email=?, phone=?, service=?, total_tickets=?, 
-            total_cost=?, transport=?, payment_ref=?, booking_date=?
+            total_cost=?, transport=?, payment_ref=?, booking_date=?, booking_time=?, price_unit=?, max_people_per_slot=?
             WHERE id=?
         `, [
             b.fullName, b.email, b.phoneNumber, b.service,
             b.totalTickets, b.totalCost, b.transport,
-            b.paymentRef, b.date, b.id
+            b.paymentRef, formattedDate, normalizedTimeSlot,
+            b.priceUnit || 'person', parsePositiveNumber(b.maxPeoplePerSlot, null),
+            b.id
         ]);
 
         res.send({ msg: "Booking updated" });

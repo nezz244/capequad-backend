@@ -644,11 +644,11 @@ app.post("/webhooks/yoco", async (req, res) => {
                 [checkoutId]
             );
         } else {
-            return res.status(400).send({ error: 'Webhook did not include a booking reference or checkout id' });
+            return res.json({ message: 'Webhook ignored: no booking reference or checkout id' });
         }
 
         if (!rows.length) {
-            return res.status(404).send({ error: 'Pending booking not found' });
+            return res.json({ message: 'Webhook ignored: pending booking not found' });
         }
 
         const pending = rows[0];

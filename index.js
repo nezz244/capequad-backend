@@ -5,6 +5,7 @@ const fetch = require('node-fetch');
 const path = require('path');
 const db = require('./db');
 const postmark = require('postmark');
+const crypto = require('crypto');
 
 
 
@@ -34,7 +35,11 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString('utf8');
+    }
+}));
 
 // -------------------- Static --------------------
 app.get('', (req, res) => {
@@ -145,6 +150,21 @@ async function ensureBookingColumns() {
     }
 }
 
+async function ensurePendingBookingsTable() {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS pending_bookings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            booking_ref VARCHAR(64) NOT NULL UNIQUE,
+            checkout_id VARCHAR(128) NULL UNIQUE,
+            booking_payload JSON NOT NULL,
+            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            webhook_payload JSON NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL
+        )
+    `);
+}
+
 async function assertSlotCapacity({ service, date, timeSlot, totalTickets, maxPeoplePerSlot }) {
     const formattedDate = normalizeBookingDate(date);
     const normalizedTimeSlot = normalizeTimeSlot(timeSlot);
@@ -196,6 +216,199 @@ async function assertSlotCapacity({ service, date, timeSlot, totalTickets, maxPe
     }
 
     return { ok: true, formattedDate, normalizedTimeSlot, requestedTickets, slotLimit };
+}
+
+function bookingUnitForPayload(payload) {
+    return payload.priceUnit === 'couple' ? 'couple(s)' : 'person(s)';
+}
+
+async function sendBookingEmails(booking) {
+    const formattedDate = normalizeBookingDate(booking.date) || booking.date;
+    const normalizedTimeSlot = normalizeTimeSlot(booking.timeSlot) || booking.timeSlot;
+    const bookingUnit = bookingUnitForPayload(booking);
+
+    const customerHtml = renderTemplate(customerTemplate, {
+        fullName: booking.fullName,
+        phoneNumber: booking.phoneNumber,
+        totalTickets: booking.totalTickets,
+        date: formattedDate,
+        timeSlot: normalizedTimeSlot,
+        bookingUnit,
+        email: booking.email
+    });
+
+    const adminHtml = renderTemplate(adminTemplate, {
+        fullName: booking.fullName,
+        phoneNumber: booking.phoneNumber,
+        totalTickets: booking.totalTickets,
+        date: formattedDate,
+        timeSlot: normalizedTimeSlot,
+        bookingUnit,
+        email: booking.email,
+        totalCost: booking.totalCost,
+        transport: booking.transport || '',
+        service: booking.service
+    });
+
+    const customerResponse = await client.sendEmail({
+        From: 'info@capeadrenaline.com',
+        To: booking.email,
+        Subject: 'Booking Confirmation',
+        HtmlBody: customerHtml
+    });
+
+    const adminResponse = await client.sendEmail({
+        From: 'info@capeadrenaline.com',
+        To: 'info@capeadrenaline.com',
+        Subject: 'New Booking Alert',
+        HtmlBody: adminHtml
+    });
+
+    return { customerResponse, adminResponse };
+}
+
+async function createBookingRecord(booking) {
+    const required = [
+        "fullName", "email", "phoneNumber",
+        "service", "totalTickets", "totalCost", "paymentRef", "date", "timeSlot", "maxPeoplePerSlot"
+    ];
+    const missing = required.filter(f => !booking[f]);
+    if (missing.length) {
+        return { ok: false, status: 400, error: "Missing required fields", fields: missing };
+    }
+
+    const capacity = await assertSlotCapacity(booking);
+    if (!capacity.ok) {
+        return capacity;
+    }
+
+    const [existing] = await db.execute(
+        "SELECT id FROM bookings WHERE payment_ref = ? LIMIT 1",
+        [booking.paymentRef]
+    );
+    if (existing.length) {
+        return { ok: true, bookingId: existing[0].id, duplicate: true };
+    }
+
+    const [result] = await db.query(
+        `
+      INSERT INTO bookings
+      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date, booking_time, price_unit, max_people_per_slot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+            booking.fullName,
+            booking.email,
+            booking.phoneNumber,
+            booking.service,
+            booking.totalTickets,
+            booking.totalCost,
+            booking.transport || '',
+            booking.paymentRef,
+            capacity.formattedDate,
+            capacity.normalizedTimeSlot,
+            booking.priceUnit || 'person',
+            capacity.slotLimit
+        ]
+    );
+
+    return { ok: true, bookingId: result.insertId };
+}
+
+function extractYocoEventType(payload) {
+    return payload.type || payload.event || payload.eventType || payload.name || '';
+}
+
+function isSuccessfulYocoPayment(payload) {
+    const eventType = String(extractYocoEventType(payload)).toLowerCase();
+    const statusCandidates = [
+        payload.status,
+        payload.data?.status,
+        payload.data?.object?.status,
+        payload.payload?.status,
+        payload.payload?.paymentStatus
+    ].filter(Boolean).map(value => String(value).toLowerCase());
+
+    return eventType.includes('succeed') ||
+        eventType.includes('paid') ||
+        statusCandidates.some(status => ['succeeded', 'successful', 'paid', 'complete', 'completed'].includes(status));
+}
+
+function extractYocoReference(payload) {
+    const metadataCandidates = [
+        payload.metadata,
+        payload.data?.metadata,
+        payload.data?.object?.metadata,
+        payload.payload?.metadata,
+        payload.payload?.checkout?.metadata,
+        payload.checkout?.metadata
+    ].filter(Boolean);
+
+    for (const metadata of metadataCandidates) {
+        if (metadata.bookingRef) {
+            return { bookingRef: metadata.bookingRef };
+        }
+    }
+
+    const checkoutId = payload.checkoutId ||
+        payload.checkout?.id ||
+        payload.data?.checkoutId ||
+        payload.data?.checkout?.id ||
+        payload.data?.object?.checkoutId ||
+        payload.data?.object?.checkout?.id ||
+        payload.payload?.checkoutId ||
+        payload.payload?.checkout?.id ||
+        payload.id ||
+        payload.data?.id ||
+        payload.data?.object?.id;
+
+    return checkoutId ? { checkoutId } : {};
+}
+
+function extractYocoPaymentRef(payload, fallback) {
+    return payload.paymentId ||
+        payload.payment?.id ||
+        payload.data?.paymentId ||
+        payload.data?.payment?.id ||
+        payload.data?.object?.paymentId ||
+        payload.data?.object?.payment?.id ||
+        payload.payload?.paymentId ||
+        payload.payload?.payment?.id ||
+        payload.id ||
+        payload.data?.id ||
+        payload.data?.object?.id ||
+        fallback;
+}
+
+function timingSafeEqualString(left, right) {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+
+    return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function verifyYocoWebhook(req) {
+    const secret = process.env.YOCO_WEBHOOK_SECRET;
+    if (!secret) {
+        return true;
+    }
+
+    const signature = req.get('webhook-signature') ||
+        req.get('x-yoco-signature') ||
+        req.get('yoco-signature') ||
+        req.get('x-signature');
+
+    if (!signature) {
+        return false;
+    }
+
+    const rawBody = req.rawBody || JSON.stringify(req.body || {});
+    const digest = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const base64Digest = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
+    const normalizedSignature = signature.replace(/^sha256=/i, '');
+
+    return timingSafeEqualString(normalizedSignature, digest) ||
+        timingSafeEqualString(normalizedSignature, base64Digest);
 }
 
 // POST /send/email
@@ -268,48 +481,17 @@ app.post('/send/email', async (req, res) => {
     }
 
     try {
-        const formattedDate = normalizeBookingDate(date) || date;
-        const normalizedTimeSlot = normalizeTimeSlot(timeSlot) || timeSlot;
-        const bookingUnit = priceUnit === 'couple' ? 'couple(s)' : 'person(s)';
-
-        // Prepare HTML bodies
-        const customerHtml = renderTemplate(customerTemplate, {
-            fullName,
-            phoneNumber,
-            totalTickets,
-            date: formattedDate,
-            timeSlot: normalizedTimeSlot,
-            bookingUnit,
-            email
-        });
-
-        const adminHtml = renderTemplate(adminTemplate, {
-            fullName,
-            phoneNumber,
-            totalTickets,
-            date: formattedDate,
-            timeSlot: normalizedTimeSlot,
-            bookingUnit,
+        const { customerResponse, adminResponse } = await sendBookingEmails({
             email,
+            fullName,
+            phoneNumber,
+            totalTickets,
+            date,
+            timeSlot,
             totalCost,
             transport,
-            service
-        });
-
-        // Send email to customer
-        const customerResponse = await client.sendEmail({
-            From: 'info@capeadrenaline.com',
-            To: email,
-            Subject: 'Booking Confirmation ✅',
-            HtmlBody: customerHtml
-        });
-
-        // Send email to admin
-        const adminResponse = await client.sendEmail({
-            From: 'info@capeadrenaline.com',
-            To: 'info@capeadrenaline.com',
-            Subject: 'New Booking Alert 📝',
-            HtmlBody: adminHtml
+            service,
+            priceUnit
         });
 
         res.json({
@@ -337,6 +519,9 @@ app.post("/create/checkout", async (req, res) => {
             });
         }
 
+        await ensurePendingBookingsTable();
+        const bookingRef = crypto.randomUUID();
+
         const amountInCents = Math.round(Number(totalCost) * 100);
 
         const apiUrl = 'https://payments.yoco.com/api/checkouts';
@@ -361,7 +546,10 @@ app.post("/create/checkout", async (req, res) => {
             amount: amountInCents,
             currency: 'ZAR',
             successUrl: `${frontendBaseUrl}/success`,
-            failureUrl: `${frontendBaseUrl}/failure`
+            failureUrl: `${frontendBaseUrl}/failure`,
+            metadata: {
+                bookingRef
+            }
         };
 
         console.log("Checkout:", { totalCost, amountInCents });
@@ -382,11 +570,108 @@ app.post("/create/checkout", async (req, res) => {
             return res.status(400).send({ error: 'Payment failed', details: json });
         }
 
+        await db.execute(
+            `
+            INSERT INTO pending_bookings
+            (booking_ref, checkout_id, booking_payload, status)
+            VALUES (?, ?, ?, ?)
+            `,
+            [
+                bookingRef,
+                json.id || null,
+                JSON.stringify({ ...req.body, bookingRef }),
+                'pending'
+            ]
+        );
+
         res.send({ data: json });
 
     } catch (err) {
         console.error('Checkout error:', err);
         res.status(500).send({ error: 'Payment API request failed', details: err.message });
+    }
+});
+
+// -------------------- Yoco Webhook --------------------
+app.post("/webhooks/yoco", async (req, res) => {
+    try {
+        if (!verifyYocoWebhook(req)) {
+            return res.status(401).send({ error: 'Invalid webhook signature' });
+        }
+
+        const payload = req.body;
+        console.log("Yoco webhook received:", payload);
+
+        if (!isSuccessfulYocoPayment(payload)) {
+            return res.json({ message: 'Webhook ignored', eventType: extractYocoEventType(payload) });
+        }
+
+        await ensurePendingBookingsTable();
+        const { bookingRef, checkoutId } = extractYocoReference(payload);
+
+        let rows;
+        if (bookingRef) {
+            [rows] = await db.execute(
+                "SELECT * FROM pending_bookings WHERE booking_ref = ? LIMIT 1",
+                [bookingRef]
+            );
+        } else if (checkoutId) {
+            [rows] = await db.execute(
+                "SELECT * FROM pending_bookings WHERE checkout_id = ? LIMIT 1",
+                [checkoutId]
+            );
+        } else {
+            return res.status(400).send({ error: 'Webhook did not include a booking reference or checkout id' });
+        }
+
+        if (!rows.length) {
+            return res.status(404).send({ error: 'Pending booking not found' });
+        }
+
+        const pending = rows[0];
+        if (pending.status === 'completed') {
+            return res.json({ message: 'Booking already completed' });
+        }
+
+        const bookingPayload = typeof pending.booking_payload === 'string'
+            ? JSON.parse(pending.booking_payload)
+            : pending.booking_payload;
+        const paymentRef = extractYocoPaymentRef(payload, pending.checkout_id || pending.booking_ref);
+        const booking = {
+            ...bookingPayload,
+            paymentRef
+        };
+
+        const bookingResult = await createBookingRecord(booking);
+        if (!bookingResult.ok) {
+            return res.status(bookingResult.status).send({
+                error: bookingResult.error,
+                fields: bookingResult.fields,
+                details: bookingResult.details
+            });
+        }
+
+        if (!bookingResult.duplicate) {
+            await sendBookingEmails(booking);
+        }
+
+        await db.execute(
+            `
+            UPDATE pending_bookings
+            SET status = ?, webhook_payload = ?, completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            `,
+            ['completed', JSON.stringify(payload), pending.id]
+        );
+
+        res.json({
+            message: 'Booking completed',
+            bookingId: bookingResult.bookingId,
+            duplicate: !!bookingResult.duplicate
+        });
+    } catch (err) {
+        console.error('Yoco webhook error:', err);
+        res.status(500).send({ error: 'Failed to process Yoco webhook', details: err.message });
     }
 });
 
@@ -424,38 +709,20 @@ app.post("/bookings/create", async (req, res) => {
     }
 
     try {
-        const capacity = await assertSlotCapacity(b);
-        if (!capacity.ok) {
-            return res.status(capacity.status).json({
-                error: capacity.error,
-                details: capacity.details
+        const bookingResult = await createBookingRecord(b);
+        if (!bookingResult.ok) {
+            return res.status(bookingResult.status).json({
+                error: bookingResult.error,
+                fields: bookingResult.fields,
+                details: bookingResult.details
             });
         }
 
-        // 3️⃣ Insert into database using db.query
-        const [result] = await db.query(
-            `
-      INSERT INTO bookings
-      (full_name, email, phone, service, total_tickets, total_cost, transport, payment_ref, booking_date, booking_time, price_unit, max_people_per_slot)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-            [
-                b.fullName,
-                b.email,
-                b.phoneNumber,
-                b.service,
-                b.totalTickets,
-                b.totalCost,
-                b.transport,
-                b.paymentRef,
-                capacity.formattedDate,
-                capacity.normalizedTimeSlot,
-                b.priceUnit || 'person',
-                capacity.slotLimit
-            ]
-        );
-
-        res.json({ message: "Booking created successfully", bookingId: result.insertId });
+        res.json({
+            message: bookingResult.duplicate ? "Booking already exists" : "Booking created successfully",
+            bookingId: bookingResult.bookingId,
+            duplicate: !!bookingResult.duplicate
+        });
     } catch (err) {
         console.error("Booking creation error:", err);
         res.status(500).json({ error: "Failed to create booking", details: err.message });

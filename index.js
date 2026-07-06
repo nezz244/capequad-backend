@@ -12,6 +12,72 @@ const crypto = require('crypto');
 
 const app = express();
 
+const merchantFeedXml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
+  <channel>
+    <title>CapeAdrenaline Products</title>
+    <link>https://capeadrenaline.com/home</link>
+    <description>Bookable CapeAdrenaline quad biking and buggy adventures in Cape Town and the Western Cape.</description>
+
+    <item>
+      <g:id>ca-quadbiking-1hr-grabouw</g:id>
+      <g:title>Quadbiking 1hr</g:title>
+      <g:description>Guided quad biking from Trails End Hotel in the Grabouw mountains with scenic trails, rugged terrain, a waterfall stop, and wide-open views with an experienced guide.</g:description>
+      <g:link>https://capeadrenaline.com/home#quadbiking-1hr-grabouw</g:link>
+      <g:image_link>https://capeadrenaline.com/assets/images/activities/quadbike-waterfall-cover-landscape.jpg</g:image_link>
+      <g:availability>in_stock</g:availability>
+      <g:price>599.00 ZAR</g:price>
+      <g:brand>CapeAdrenaline</g:brand>
+      <g:condition>new</g:condition>
+      <g:identifier_exists>no</g:identifier_exists>
+      <g:product_type>Adventure tours &gt; Quad biking &gt; Grabouw</g:product_type>
+    </item>
+
+    <item>
+      <g:id>ca-couple-buggy-waterfall-grabouw</g:id>
+      <g:title>Capetown couple forest adventure plus waterfall stop</g:title>
+      <g:description>Guided couple buggy forest adventure from Trails End Hotel in the Grabouw mountains with scenic trails, rugged terrain, a waterfall stop, and photo-friendly views.</g:description>
+      <g:link>https://capeadrenaline.com/home#couple-buggy-waterfall-grabouw</g:link>
+      <g:image_link>https://capeadrenaline.com/assets/images/activities/waterfall-buggy-cover-landscape.jpg</g:image_link>
+      <g:availability>in_stock</g:availability>
+      <g:price>1500.00 ZAR</g:price>
+      <g:brand>CapeAdrenaline</g:brand>
+      <g:condition>new</g:condition>
+      <g:identifier_exists>no</g:identifier_exists>
+      <g:product_type>Adventure tours &gt; Dune buggy &gt; Grabouw</g:product_type>
+    </item>
+
+    <item>
+      <g:id>ca-atlantis-dune-quad-1hr</g:id>
+      <g:title>Atlantis dune quad biking 1hr</g:title>
+      <g:description>Guided one-hour quadbike tour at Atlantis Dunes, Cape Town with safety briefing, equipment fitting, off-road dune riding, and an experienced guide.</g:description>
+      <g:link>https://capeadrenaline.com/home#atlantis-dune-quad-biking-1hr</g:link>
+      <g:image_link>https://capeadrenaline.com/assets/images/activities/atlantis-dune-quad-biking-02.avif</g:image_link>
+      <g:availability>in_stock</g:availability>
+      <g:price>699.00 ZAR</g:price>
+      <g:brand>CapeAdrenaline</g:brand>
+      <g:condition>new</g:condition>
+      <g:identifier_exists>no</g:identifier_exists>
+      <g:product_type>Adventure tours &gt; Quad biking &gt; Atlantis Dunes</g:product_type>
+    </item>
+
+    <item>
+      <g:id>ca-atlantis-dune-quad-40min</g:id>
+      <g:title>Atlantis dune quad biking 40min</g:title>
+      <g:description>Guided 40-minute quadbike tour at Atlantis Dunes, Cape Town with safety briefing, equipment fitting, off-road dune riding, and an experienced guide.</g:description>
+      <g:link>https://capeadrenaline.com/home#atlantis-dune-quad-biking-40min</g:link>
+      <g:image_link>https://capeadrenaline.com/assets/images/activities/atlantis-dune-quad-biking-02.avif</g:image_link>
+      <g:availability>in_stock</g:availability>
+      <g:price>499.00 ZAR</g:price>
+      <g:brand>CapeAdrenaline</g:brand>
+      <g:condition>new</g:condition>
+      <g:identifier_exists>no</g:identifier_exists>
+      <g:product_type>Adventure tours &gt; Quad biking &gt; Atlantis Dunes</g:product_type>
+    </item>
+  </channel>
+</rss>
+`;
+
 // -------------------- CORS Setup --------------------
 const allowedOrigins = [
     'https://capequad-bookings-production.up.railway.app',
@@ -42,6 +108,12 @@ app.use(express.json({
 }));
 
 // -------------------- Static --------------------
+app.get('/merchant-feed.xml', (req, res) => {
+    res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(merchantFeedXml);
+});
+
 app.get('', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });

@@ -129,11 +129,27 @@ const client = new postmark.ServerClient(process.env.POSTMARK_API_KEY);
 
 // Customer email template
 const customerTemplate = `
-<h1>Payment Success</h1>
-<p>Booking created successfully!</p>
-<p>Hi {{fullName}}, your booking for {{totalTickets}} {{bookingUnit}} on {{date}} at {{timeSlot}} has been created successfully with CapeAdrenaline.</p>
-<p>We have your contact number as: {{phoneNumber}}</p>
-<p>Your tour guide will contact you within an hour from the booking time. Happy touring!</p>
+<div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 640px; margin: 0 auto;">
+    <h1 style="color: #111827; margin-bottom: 8px;">Booking confirmed</h1>
+    <p style="margin-top: 0;">Hi {{fullName}},</p>
+    <p>Payment received. Your Cape Adrenaline adventure is confirmed.</p>
+
+    <table style="width: 100%; border-collapse: collapse; margin: 24px 0;">
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Activity</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{service}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Date</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{date}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Time</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{timeSlot}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Group size</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{totalTickets}} {{bookingUnit}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Amount paid</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{amountPaid}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Booking reference</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{paymentRef}}</td></tr>
+        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Add-ons</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{addOns}}</td></tr>
+        <tr><td style="padding: 10px;"><strong>Meeting point</strong></td><td style="padding: 10px;">{{meetingPoint}}</td></tr>
+    </table>
+
+    <p><strong>What happens next?</strong><br>Your guide will contact you on {{phoneNumber}} to confirm the final meeting details. Please arrive at least 15 minutes before your booking time.</p>
+    <p>Need help? Call or WhatsApp <a href="tel:+27605954968">+27 60 595 4968</a>, or email <a href="mailto:info@capeadrenaline.com">info@capeadrenaline.com</a>.</p>
+    <p>We look forward to welcoming you.</p>
+    <p><strong>Cape Adrenaline</strong></p>
+</div>
 `;
 
 // Admin email template
@@ -166,8 +182,17 @@ const groupActivityAdminTemplate = `
 <p>Message: {{message}}</p>
 `;
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function renderTemplate(template, data) {
-    return template.replace(/{{(.*?)}}/g, (_, key) => data[key.trim()] || '');
+    return template.replace(/{{(.*?)}}/g, (_, key) => escapeHtml(data[key.trim()]));
 }
 
 function parsePositiveNumber(value, fallback = 0) {
@@ -294,6 +319,36 @@ function bookingUnitForPayload(payload) {
     return payload.priceUnit === 'couple' ? 'couple(s)' : 'person(s)';
 }
 
+function formatZar(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) {
+        return 'Payment confirmed';
+    }
+
+    const [rands, cents] = amount.toFixed(2).split('.');
+    return `R${rands.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${cents}`;
+}
+
+function meetingPointForBooking(service) {
+    return String(service || '').toLowerCase().includes('atlantis')
+        ? 'Atlantis Dunes, Cape Town (your guide will share the exact meeting pin)'
+        : 'Trails End Hotel, Grabouw';
+}
+
+function addOnsForBooking(booking) {
+    const addOns = [];
+    const extras = booking.extras || {};
+
+    if (extras.burgerLunchPerPerson) {
+        addOns.push('Burger lunch');
+    }
+    if (extras.transportPerPerson || booking.transport) {
+        addOns.push('Transport');
+    }
+
+    return addOns.length ? addOns.join(', ') : 'None';
+}
+
 async function sendBookingEmails(booking) {
     const formattedDate = normalizeBookingDate(booking.date) || booking.date;
     const normalizedTimeSlot = normalizeTimeSlot(booking.timeSlot) || booking.timeSlot;
@@ -306,7 +361,12 @@ async function sendBookingEmails(booking) {
         date: formattedDate,
         timeSlot: normalizedTimeSlot,
         bookingUnit,
-        email: booking.email
+        email: booking.email,
+        service: booking.service,
+        amountPaid: formatZar(booking.totalCost),
+        paymentRef: booking.paymentRef,
+        addOns: addOnsForBooking(booking),
+        meetingPoint: meetingPointForBooking(booking.service)
     });
 
     const adminHtml = renderTemplate(adminTemplate, {

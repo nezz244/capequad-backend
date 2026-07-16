@@ -145,6 +145,10 @@ const customerTemplate = `
         <tr><td style="padding: 10px;"><strong>Meeting point</strong></td><td style="padding: 10px;">{{meetingPoint}}</td></tr>
     </table>
 
+    <div style="background-color: #fff7ed; border: 1px solid #fdba74; padding: 14px; margin: 20px 0;">
+        <strong>Entrance permit:</strong> A R100 entrance permit fee per person is payable on arrival. This fee is not included in the amount paid online.
+    </div>
+
     <p><strong>What happens next?</strong><br>Your guide will contact you on {{phoneNumber}} to confirm the final meeting details. Please arrive at least 15 minutes before your booking time.</p>
     <p>Need help? Call or WhatsApp <a href="tel:+27605954968">+27 60 595 4968</a>, or email <a href="mailto:info@capeadrenaline.com">info@capeadrenaline.com</a>.</p>
     <p>We look forward to welcoming you.</p>

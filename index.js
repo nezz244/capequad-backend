@@ -129,31 +129,91 @@ const client = new postmark.ServerClient(process.env.POSTMARK_API_KEY);
 
 // Customer email template
 const customerTemplate = `
-<div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 640px; margin: 0 auto;">
-    <h1 style="color: #111827; margin-bottom: 8px;">Booking confirmed</h1>
-    <p style="margin-top: 0;">Hi {{fullName}},</p>
-    <p>Payment received. Your Cape Adrenaline adventure is confirmed.</p>
-
-    <table style="width: 100%; border-collapse: collapse; margin: 24px 0;">
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Activity</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{service}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Date</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{date}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Time</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{timeSlot}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Group size</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{totalTickets}} {{bookingUnit}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Amount paid</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{amountPaid}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Booking reference</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{paymentRef}}</td></tr>
-        <tr><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>Add-ons</strong></td><td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">{{addOns}}</td></tr>
-        <tr><td style="padding: 10px;"><strong>Meeting point</strong></td><td style="padding: 10px;">{{meetingPoint}}</td></tr>
-    </table>
-
-    <div style="background-color: #fff7ed; border: 1px solid #fdba74; padding: 14px; margin: 20px 0;">
-        <strong>Entrance permit:</strong> A R100 entrance permit fee per person is payable on arrival. This fee is not included in the amount paid online.
-    </div>
-
-    <p><strong>What happens next?</strong><br>Your guide will contact you on {{phoneNumber}} to confirm the final meeting details. Please arrive at least 15 minutes before your booking time.</p>
-    <p>Need help? Call or WhatsApp <a href="tel:+27605954968">+27 60 595 4968</a>, or email <a href="mailto:info@capeadrenaline.com">info@capeadrenaline.com</a>.</p>
-    <p>We look forward to welcoming you.</p>
-    <p><strong>Cape Adrenaline</strong></p>
-</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; margin: 0; padding: 0; background-color: #eef3f0; font-family: Arial, Helvetica, sans-serif; color: #17211e;">
+    <tr>
+        <td align="center" style="padding: 32px 12px;">
+            <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(7, 17, 15, 0.10);">
+                <tr>
+                    <td style="padding: 24px 28px; background-color: #07110f;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td width="54" valign="middle">
+                                    <table role="presentation" width="48" height="48" cellspacing="0" cellpadding="0" border="0" style="width: 48px; height: 48px; background-color: #34d399; border-radius: 24px;">
+                                        <tr><td align="center" valign="middle" style="font-size: 17px; line-height: 48px; font-weight: 900; color: #07110f;">CA</td></tr>
+                                    </table>
+                                </td>
+                                <td valign="middle" style="padding-left: 12px;">
+                                    <div style="font-size: 22px; line-height: 26px; font-weight: 900; color: #ffffff;">CAPE ADRENALINE</div>
+                                    <div style="padding-top: 3px; font-size: 10px; line-height: 14px; font-weight: 700; letter-spacing: 1.6px; color: #a7f3d0;">FOREST &amp; DUNE ADVENTURES</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <img src="https://capeadrenaline.com/assets/images/activities/quadbike-waterfall-cover-landscape.jpg" width="640" alt="Cape Adrenaline quad biking adventure" style="display: block; width: 100%; max-width: 640px; height: auto; border: 0;">
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 34px 32px 12px 32px;">
+                        <span style="display: inline-block; padding: 7px 11px; border-radius: 4px; background-color: #d1fae5; color: #065f46; font-size: 11px; line-height: 14px; font-weight: 800; letter-spacing: 1px;">BOOKING CONFIRMED</span>
+                        <h1 style="margin: 18px 0 10px 0; font-size: 30px; line-height: 36px; color: #07110f; font-weight: 900;">You are booked for adventure.</h1>
+                        <p style="margin: 0; font-size: 16px; line-height: 26px; color: #4b5b55;">Hi {{fullName}}, your payment was successful and your Cape Adrenaline booking is confirmed. Everything you need is below.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 18px 32px 8px 32px;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; border: 1px solid #dce6e1; border-radius: 6px; border-collapse: separate; overflow: hidden;">
+                            <tr><td colspan="2" style="padding: 14px 16px; background-color: #f3f7f5; border-bottom: 1px solid #dce6e1; font-size: 13px; line-height: 18px; font-weight: 800; color: #17362e;">BOOKING SUMMARY</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Activity</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e;">{{service}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Date</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e;">{{date}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Time</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e;">{{timeSlot}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Group size</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e;">{{totalTickets}} {{bookingUnit}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Amount paid</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e;">{{amountPaid}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 13px; color: #6b7c75;">Booking reference</td><td style="padding: 12px 16px; border-bottom: 1px solid #e8eeeb; font-size: 14px; font-weight: 700; color: #17211e; word-break: break-word;">{{paymentRef}}</td></tr>
+                            <tr><td width="38%" style="padding: 12px 16px; font-size: 13px; color: #6b7c75;">Add-ons</td><td style="padding: 12px 16px; font-size: 14px; font-weight: 700; color: #17211e;">{{addOns}}</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 16px 32px 0 32px;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; background-color: #fff7ed; border-left: 4px solid #f59e0b;">
+                            <tr><td style="padding: 15px 16px; font-size: 14px; line-height: 22px; color: #78350f;"><strong>Entrance permit:</strong> A R100 entrance permit fee per person is payable on arrival. This fee is not included in the amount paid online.</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 16px 32px 0 32px;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px;">
+                            <tr>
+                                <td style="padding: 16px;">
+                                    <div style="font-size: 12px; line-height: 16px; font-weight: 800; letter-spacing: 0.7px; color: #047857;">MEETING POINT</div>
+                                    <div style="padding-top: 6px; font-size: 15px; line-height: 23px; font-weight: 700; color: #064e3b;">{{meetingPoint}}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 28px 32px 32px 32px;">
+                        <h2 style="margin: 0 0 10px 0; font-size: 19px; line-height: 24px; color: #07110f;">What happens next?</h2>
+                        <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 23px; color: #4b5b55;">Your guide will contact you on <strong>{{phoneNumber}}</strong> to confirm the final meeting details. Please arrive at least 15 minutes before your booking time.</p>
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr><td style="border-radius: 4px; background-color: #34d399;"><a href="https://capeadrenaline.com/home" style="display: inline-block; padding: 12px 20px; color: #07110f; font-size: 13px; line-height: 18px; font-weight: 800; text-decoration: none;">VISIT CAPE ADRENALINE</a></td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 22px 32px; background-color: #07110f;">
+                        <p style="margin: 0; font-size: 13px; line-height: 21px; color: #d1fae5;">Need help? Call or WhatsApp <a href="tel:+27605954968" style="color: #6ee7b7; text-decoration: none; font-weight: 700;">+27 60 595 4968</a><br>Email <a href="mailto:info@capeadrenaline.com" style="color: #6ee7b7; text-decoration: none; font-weight: 700;">info@capeadrenaline.com</a></p>
+                        <p style="margin: 14px 0 0 0; font-size: 11px; line-height: 17px; color: #8fa69e;">Cape Town forest, waterfall and dune adventures.</p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
 `;
 
 // Admin email template

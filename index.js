@@ -803,11 +803,72 @@ app.post("/create/checkout", async (req, res) => {
             ]
         );
 
-        res.send({ data: json });
+        res.send({
+            data: {
+                ...json,
+                bookingRef
+            }
+        });
 
     } catch (err) {
         console.error('Checkout error:', err);
         res.status(500).send({ error: 'Payment API request failed', details: err.message });
+    }
+});
+
+// The success page uses this endpoint to confirm that Yoco's signed webhook
+// completed the booking before reporting a purchase to Google Ads.
+app.get('/checkout/status/:checkoutId', async (req, res) => {
+    try {
+        const checkoutId = String(req.params.checkoutId || '').trim();
+        if (!checkoutId || checkoutId.length > 128) {
+            return res.status(400).send({ error: 'Invalid checkout id' });
+        }
+
+        await ensurePendingBookingsTable();
+        const [rows] = await db.execute(
+            `
+            SELECT checkout_id, booking_ref, booking_payload, status, webhook_payload
+            FROM pending_bookings
+            WHERE checkout_id = ?
+            LIMIT 1
+            `,
+            [checkoutId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).send({ error: 'Checkout not found' });
+        }
+
+        const pending = rows[0];
+        if (pending.status !== 'completed') {
+            return res.send({ status: pending.status });
+        }
+
+        const bookingPayload = typeof pending.booking_payload === 'string'
+            ? JSON.parse(pending.booking_payload)
+            : pending.booking_payload;
+        const webhookPayload = typeof pending.webhook_payload === 'string'
+            ? JSON.parse(pending.webhook_payload)
+            : pending.webhook_payload;
+
+        return res.send({
+            status: 'completed',
+            transactionId: extractYocoPaymentRef(
+                webhookPayload || {},
+                pending.checkout_id || pending.booking_ref
+            ),
+            value: Number(bookingPayload.totalCost),
+            currency: 'ZAR',
+            service: bookingPayload.service,
+            totalTickets: Number(bookingPayload.totalTickets)
+        });
+    } catch (err) {
+        console.error('Checkout status error:', err);
+        return res.status(500).send({
+            error: 'Failed to retrieve checkout status',
+            details: err.message
+        });
     }
 });
 
